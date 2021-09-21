@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"os"
 	"sync"
 	"time"
+
+	"github.com/ByronLiang/aws-gw-lambda/config"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -20,7 +21,7 @@ var awsSessionOnce sync.Once
 // AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, REGION 配置在环境变量里
 func GetAwsSession() (*session.Session, error) {
 	var err error
-	region := os.Getenv("REGION")
+	region := config.ResizeImageLambdaConfig.Region
 	awsSessionOnce.Do(func() {
 		awsSession, err = session.NewSessionWithOptions(session.Options{
 			Config: aws.Config{

@@ -3,9 +3,10 @@ package handle
 import (
 	"errors"
 	"log"
-	"os"
 	"strconv"
 	"strings"
+
+	"github.com/ByronLiang/aws-gw-lambda/config"
 
 	"github.com/ByronLiang/aws-gw-lambda/util"
 
@@ -24,52 +25,70 @@ var (
 
 func ImageResizeHandle(request events.APIGatewayProxyRequest) (*events.APIGatewayProxyResponse, error) {
 	parameters := request.QueryStringParameters
-	if path, ok := parameters["path"]; ok {
-		resizeConfig := &model.ResizeConfig{Bucket: os.Getenv("BUCKET")}
-		paths := strings.Split(path, "/")
-		if len(paths) == 2 {
-			size := paths[0]
-			// 请求文件名
-			resizeConfig.FileName = paths[1]
-			// 解析长宽
-			sizeGroup := strings.Split(size, "x")
-			if len(sizeGroup) == 2 {
-				width := sizeGroup[0]
-				height := sizeGroup[1]
-				// 解析长度
-				if widthInt, err := strconv.Atoi(width); err != nil {
-					log.Println("image size width parse int error")
-					return FailAPIGatewayProxyResponse("image size width parse int error"), sizeParseIntErr
-				} else {
-					resizeConfig.Width = widthInt
-				}
-				// 解析宽度
-				if heightInt, err := strconv.Atoi(height); err != nil {
-					log.Println("image size height parse int error")
-					return FailAPIGatewayProxyResponse("image size height parse int error"), sizeParseIntErr
-				} else {
-					resizeConfig.Height = heightInt
-				}
-				// 下载图片二进制数据
-				_, originImageSize, err := util.DownloadFromS3WithBytes(resizeConfig.Bucket, resizeConfig.FileName)
-				if err != nil {
-					// 文件名不存在
-					log.Printf("download origin file error: %s", err.Error())
-					return FailAPIGatewayProxyResponse("filename error"), fileNoExistErr
-				}
-				log.Println("download image ", resizeConfig.FileName)
-				log.Println("image size: ", originImageSize)
-				// TODO: 图片裁剪流程
-				// TODO: 图片裁剪结束 将处理后的资源上传回S3
-				// 最终跳转到已成功处理的图片资源
-				return SuccessAPIGatewayProxyResponse("https://byronegg.s3.amazonaws.com/branches.png"), nil
-			}
-			log.Println("image size group query error ", size)
-			return FailAPIGatewayProxyResponse("image size query error"), sizeGroupErr
-		}
-		log.Println("path split size error ", path)
-		return FailAPIGatewayProxyResponse("path size error"), pathSizeErr
+	path, ok := parameters["path"]
+	if !ok {
+		log.Println("query parameter path error")
+		return nil, parametersErr
 	}
-	log.Println("path data error ")
-	return FailAPIGatewayProxyResponse("parameters error"), parametersErr
+	paths := strings.Split(path, "/")
+	if len(paths) != 2 {
+		log.Printf("path split size error: %s", path)
+		return nil, pathSizeErr
+	}
+	resizeConfig, err := parsePath(paths)
+	// 解析失败, 返回原文件资源链接
+	if err != nil {
+		filePath := config.ResizeImageLambdaConfig.BucketUrl + "/" + resizeConfig.FileName
+		return SuccessAPIGatewayProxyResponse(filePath), nil
+	}
+	// 解析成功
+	// 下载图片二进制数据
+	_, originImageSize, err := util.DownloadFromS3WithBytes(
+		config.ResizeImageLambdaConfig.Bucket,
+		resizeConfig.FileName)
+	if err != nil {
+		// 文件名不存在
+		log.Printf("download origin file error: %s", err.Error())
+		filePath := config.ResizeImageLambdaConfig.BucketUrl + "/" + resizeConfig.FileName
+		return SuccessAPIGatewayProxyResponse(filePath), nil
+	}
+	log.Println("download image ", resizeConfig.FileName)
+	log.Println("image size: ", originImageSize)
+	// TODO: 图片裁剪流程
+	// TODO: 图片裁剪结束 将处理后的资源上传回S3
+	// 最终跳转到已成功处理的图片资源
+	filePath := config.ResizeImageLambdaConfig.BucketUrl + "/" + resizeConfig.FileName
+	return SuccessAPIGatewayProxyResponse(filePath), nil
+	//return SuccessAPIGatewayProxyResponse("https://byronegg.s3.amazonaws.com/branches.png"), nil
+}
+
+func parsePath(pathList []string) (model.ResizeConfig, error) {
+	resizeConfig := model.ResizeConfig{
+		FileName: pathList[1], // 请求文件名
+	}
+	// TODO: 校验文件后缀
+	size := pathList[0]
+	// 解析长宽
+	sizeGroup := strings.Split(size, "x")
+	if len(sizeGroup) != 2 {
+		log.Println("image size group query error ", size)
+		return resizeConfig, sizeGroupErr
+	}
+	width := sizeGroup[0]
+	height := sizeGroup[1]
+	// 解析长度
+	widthInt, err := strconv.Atoi(width)
+	if err != nil {
+		log.Println("image size width parse int error")
+		return resizeConfig, sizeParseIntErr
+	}
+	resizeConfig.Width = widthInt
+	// 解析宽度
+	heightInt, err := strconv.Atoi(height)
+	if err != nil {
+		log.Println("image size height parse int error")
+		return resizeConfig, sizeParseIntErr
+	}
+	resizeConfig.Height = heightInt
+	return resizeConfig, nil
 }
