@@ -1,13 +1,33 @@
 package handle
 
 import (
+	"bytes"
+	"io/ioutil"
 	"strings"
 	"testing"
+
+	"github.com/disintegration/imaging"
 
 	"github.com/ByronLiang/aws-gw-lambda/config"
 
 	"github.com/ByronLiang/aws-gw-lambda/util"
 )
+
+func TestResizeImage(t *testing.T) {
+	fileBt, err := ioutil.ReadFile("branches.png")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	imageObj, err := imaging.Decode(bytes.NewReader(fileBt))
+	// 针对参数为0是自适应裁剪
+	newImageObj := imaging.Resize(imageObj, 150, 0, imaging.Lanczos)
+	err = imaging.Save(newImageObj, "./newImage.png")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+}
 
 func TestImageResizeHandle(t *testing.T) {
 	basePath := "130x130/branches.png"
@@ -33,7 +53,11 @@ func TestImageResizeHandle(t *testing.T) {
 	}
 	t.Log(len(resizedImageByte))
 	fileFullPath := config.ResizeImageLambdaConfig.PathPrefix + basePath
-	err = util.Upload2S3ByBytes(config.ResizeImageLambdaConfig.Bucket, fileFullPath, resizedImageByte)
+	err = util.Upload2S3ByBytes(
+		config.ResizeImageLambdaConfig.Bucket,
+		fileFullPath,
+		fileFormatContentType[conf.FileFormat],
+		resizedImageByte)
 	if err != nil {
 		t.Log("upload s3 error")
 		t.Error(err)

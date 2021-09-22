@@ -25,6 +25,14 @@ var (
 	fileNoExistErr  = errors.New("fileName No Exist error")
 )
 
+var fileFormatContentType = map[imaging.Format]string{
+	imaging.JPEG: "image/jpeg",
+	imaging.PNG:  "image/png",
+	imaging.GIF:  "image/gif",
+	imaging.BMP:  "image/bmp",
+	imaging.TIFF: "image/tiff",
+}
+
 func ImageResizeHandle(request events.APIGatewayProxyRequest) (*events.APIGatewayProxyResponse, error) {
 	parameters := request.QueryStringParameters
 	path, ok := parameters["path"]
@@ -65,7 +73,11 @@ func ImageResizeHandle(request events.APIGatewayProxyRequest) (*events.APIGatewa
 	}
 	// 图片裁剪结束 将处理后的资源上传回S3
 	fileFullPath := config.ResizeImageLambdaConfig.PathPrefix + path
-	err = util.Upload2S3ByBytes(config.ResizeImageLambdaConfig.Bucket, fileFullPath, resizedImageByte)
+	err = util.Upload2S3ByBytes(
+		config.ResizeImageLambdaConfig.Bucket,
+		fileFullPath,
+		fileFormatContentType[resizeConfig.FileFormat],
+		resizedImageByte)
 	if err != nil {
 		log.Printf("upload resize image to s3 error: %s", err.Error())
 		filePath := config.ResizeImageLambdaConfig.BucketUrl + "/" + resizeConfig.FileName
@@ -83,6 +95,7 @@ func parsePath(pathList []string) (model.ResizeConfig, error) {
 	// 校验文件后缀
 	fileFormat, err := imaging.FormatFromFilename(resizeConfig.FileName)
 	if err != nil {
+		log.Printf("file format unsupport error: %s", err.Error())
 		return resizeConfig, err
 	}
 	resizeConfig.FileFormat = fileFormat

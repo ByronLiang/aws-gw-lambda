@@ -52,7 +52,7 @@ func DownloadFromS3WithBytes(bucket string, fullFileName string) (fileBytes []by
 	return
 }
 
-func Upload2S3ByBytes(bucket string, fullFileName string, fileBytes []byte) (err error) {
+func Upload2S3ByBytes(bucket string, fullFileName string, contentType string, fileBytes []byte) (err error) {
 	sess, err := GetAwsSession()
 	if err != nil {
 		err = errors.New("upload data, create aws session error: " + err.Error())
@@ -60,9 +60,10 @@ func Upload2S3ByBytes(bucket string, fullFileName string, fileBytes []byte) (err
 	}
 	uploader := s3manager.NewUploader(sess)
 	_, err = uploader.Upload(&s3manager.UploadInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(fullFileName),
-		Body:   bytes.NewReader(fileBytes),
+		Bucket:      aws.String(bucket),
+		Key:         aws.String(fullFileName),
+		Body:        bytes.NewReader(fileBytes),
+		ContentType: aws.String(contentType),
 	})
 	if err != nil {
 		err = errors.New(fmt.Sprintf("upload file 2 s3 error, bucket: %s, key: %s, region: %s, error: %s", bucket, fullFileName, getRegion(sess), err.Error()))
