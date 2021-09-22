@@ -1,4 +1,4 @@
-package handle
+package model
 
 import (
 	"net/http"
@@ -6,7 +6,7 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 )
 
-func FailAPIGatewayProxyResponse(msg string) *events.APIGatewayProxyResponse {
+func FailRequestResponse(msg string) *events.APIGatewayProxyResponse {
 	return &events.APIGatewayProxyResponse{
 		Body:       msg,
 		StatusCode: http.StatusBadRequest,
@@ -14,7 +14,7 @@ func FailAPIGatewayProxyResponse(msg string) *events.APIGatewayProxyResponse {
 }
 
 // 重定向 裁剪后图片地址
-func SuccessAPIGatewayProxyResponse(data string) *events.APIGatewayProxyResponse {
+func SuccessRedirectResponse(data string) *events.APIGatewayProxyResponse {
 	header := make(map[string]string)
 	header["Location"] = data
 	return &events.APIGatewayProxyResponse{

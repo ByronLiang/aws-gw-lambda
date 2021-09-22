@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/disintegration/imaging"
+
 	"github.com/ByronLiang/aws-gw-lambda/config"
 
 	"github.com/ByronLiang/aws-gw-lambda/util"
@@ -39,34 +41,51 @@ func ImageResizeHandle(request events.APIGatewayProxyRequest) (*events.APIGatewa
 	// 解析失败, 返回原文件资源链接
 	if err != nil {
 		filePath := config.ResizeImageLambdaConfig.BucketUrl + "/" + resizeConfig.FileName
-		return SuccessAPIGatewayProxyResponse(filePath), nil
+		return model.SuccessRedirectResponse(filePath), nil
 	}
 	// 解析成功
 	// 下载图片二进制数据
-	_, originImageSize, err := util.DownloadFromS3WithBytes(
+	originImageByte, _, err := util.DownloadFromS3WithBytes(
 		config.ResizeImageLambdaConfig.Bucket,
 		resizeConfig.FileName)
 	if err != nil {
 		// 文件名不存在
 		log.Printf("download origin file error: %s", err.Error())
 		filePath := config.ResizeImageLambdaConfig.BucketUrl + "/" + resizeConfig.FileName
-		return SuccessAPIGatewayProxyResponse(filePath), nil
+		return model.SuccessRedirectResponse(filePath), nil
 	}
-	log.Println("download image ", resizeConfig.FileName)
-	log.Println("image size: ", originImageSize)
-	// TODO: 图片裁剪流程
-	// TODO: 图片裁剪结束 将处理后的资源上传回S3
+	resizeConfig.ImageByte = originImageByte
+	log.Printf("start to resize image: %s", resizeConfig.FileName)
+	// 图片裁剪流程
+	resizedImageByte, err := util.GetResizedImage(&resizeConfig)
+	if err != nil {
+		log.Printf("get resized image error: %s", err.Error())
+		filePath := config.ResizeImageLambdaConfig.BucketUrl + "/" + resizeConfig.FileName
+		return model.SuccessRedirectResponse(filePath), nil
+	}
+	// 图片裁剪结束 将处理后的资源上传回S3
+	fileFullPath := config.ResizeImageLambdaConfig.PathPrefix + path
+	err = util.Upload2S3ByBytes(config.ResizeImageLambdaConfig.Bucket, fileFullPath, resizedImageByte)
+	if err != nil {
+		log.Printf("upload resize image to s3 error: %s", err.Error())
+		filePath := config.ResizeImageLambdaConfig.BucketUrl + "/" + resizeConfig.FileName
+		return model.SuccessRedirectResponse(filePath), nil
+	}
 	// 最终跳转到已成功处理的图片资源
-	filePath := config.ResizeImageLambdaConfig.BucketUrl + "/" + resizeConfig.FileName
-	return SuccessAPIGatewayProxyResponse(filePath), nil
-	//return SuccessAPIGatewayProxyResponse("https://byronegg.s3.amazonaws.com/branches.png"), nil
+	filePath := config.ResizeImageLambdaConfig.BucketUrl + "/" + fileFullPath
+	return model.SuccessRedirectResponse(filePath), nil
 }
 
 func parsePath(pathList []string) (model.ResizeConfig, error) {
 	resizeConfig := model.ResizeConfig{
 		FileName: pathList[1], // 请求文件名
 	}
-	// TODO: 校验文件后缀
+	// 校验文件后缀
+	fileFormat, err := imaging.FormatFromFilename(resizeConfig.FileName)
+	if err != nil {
+		return resizeConfig, err
+	}
+	resizeConfig.FileFormat = fileFormat
 	size := pathList[0]
 	// 解析长宽
 	sizeGroup := strings.Split(size, "x")

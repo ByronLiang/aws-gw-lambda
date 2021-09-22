@@ -1,7 +1,11 @@
 package model
 
+import "github.com/disintegration/imaging"
+
 type ResizeConfig struct {
-	Width    int    `json:"width"`
-	Height   int    `json:"height"`
-	FileName string `json:"fileName"`
+	Width      int
+	Height     int
+	FileName   string
+	FileFormat imaging.Format
+	ImageByte  []byte
 }
