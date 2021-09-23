@@ -2,7 +2,11 @@ package handle
 
 import (
 	"bytes"
+	"image"
+	"image/draw"
+	"image/gif"
 	"io/ioutil"
+	"os"
 	"testing"
 
 	"github.com/disintegration/imaging"
@@ -11,6 +15,45 @@ import (
 
 	"github.com/ByronLiang/aws-gw-lambda/util"
 )
+
+func TestResizeGif(t *testing.T) {
+	fileBt, err := ioutil.ReadFile("cat.gif")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	gifList, err := gif.DecodeAll(bytes.NewReader(fileBt))
+	t.Log("gif pic count: ", len(gifList.Image))
+	w := 100
+	h := 100
+	for i, gifData := range gifList.Image {
+		newImg := imaging.Resize(gifData, w, h, imaging.Lanczos)
+		gifList.Image[i] = image.NewPaletted(image.Rect(0, 0, w, h), gifList.Image[i].Palette)
+		draw.Draw(gifList.Image[i], image.Rect(0, 0, w, h), newImg, image.Pt(0, 0), draw.Src)
+	}
+	outputFile, err := os.Create("cat2.gif")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	defer outputFile.Close()
+
+	err = gif.EncodeAll(outputFile, gifList)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	// 返回 byte 数据
+	//conf := &model.ResizeConfig{
+	//	Width:      100,
+	//	Height:     100,
+	//	FileName:   "cat.gif",
+	//	FileFormat: imaging.GIF,
+	//	ImageByte:  fileBt,
+	//}
+	//resizeGifByte, err := util.GetResizeGif(conf)
+	//t.Log("resizeGifByte len: ", len(resizeGifByte))
+}
 
 func TestResizeImage(t *testing.T) {
 	fileBt, err := ioutil.ReadFile("branches.png")
