@@ -40,16 +40,15 @@ func ImageResizeHandle(request events.APIGatewayProxyRequest) (*events.APIGatewa
 		log.Println("query parameter path error")
 		return nil, parametersErr
 	}
-	paths := strings.Split(path, "/")
-	if len(paths) != 2 {
-		log.Printf("path split size error: %s", path)
-		return nil, pathSizeErr
-	}
-	resizeConfig, err := parsePath(paths)
+	resizeConfig, isRedirectSource, err := parsePath(path)
 	// 解析失败, 返回原文件资源链接
 	if err != nil {
-		filePath := config.ResizeImageLambdaConfig.BucketUrl + "/" + resizeConfig.FileName
-		return model.SuccessRedirectResponse(filePath), nil
+		if isRedirectSource {
+			filePath := config.ResizeImageLambdaConfig.BucketUrl + "/" + resizeConfig.FileName
+			return model.SuccessRedirectResponse(filePath), nil
+		} else {
+			return nil, err
+		}
 	}
 	// 解析成功
 	// 下载图片二进制数据
@@ -65,7 +64,7 @@ func ImageResizeHandle(request events.APIGatewayProxyRequest) (*events.APIGatewa
 	resizeConfig.ImageByte = originImageByte
 	log.Printf("start to resize image: %s", resizeConfig.FileName)
 	// 图片裁剪流程
-	resizedImageByte, err := util.GetResizedImage(&resizeConfig)
+	resizedImageByte, err := util.GetResizedImage(resizeConfig)
 	if err != nil {
 		log.Printf("get resized image error: %s", err.Error())
 		filePath := config.ResizeImageLambdaConfig.BucketUrl + "/" + resizeConfig.FileName
@@ -88,23 +87,34 @@ func ImageResizeHandle(request events.APIGatewayProxyRequest) (*events.APIGatewa
 	return model.SuccessRedirectResponse(filePath), nil
 }
 
-func parsePath(pathList []string) (model.ResizeConfig, error) {
-	resizeConfig := model.ResizeConfig{
-		FileName: pathList[1], // 请求文件名
+func parsePath(path string) (*model.ResizeConfig, bool, error) {
+	pathList := strings.Split(path, "/")
+	if len(pathList) < 2 {
+		// 路径异常, 直接响应异常
+		log.Printf("path split size error: %s", path)
+		return nil, false, pathSizeErr
+	}
+	// 针对 100x100/d1/d2/pic.png 兼容多级文件目录
+	size := pathList[0]
+	// 提取文件名
+	fileNameList := make([]string, len(pathList)-1)
+	copy(fileNameList, pathList[1:])
+	fileName := strings.Join(fileNameList, "/")
+	resizeConfig := &model.ResizeConfig{
+		FileName: fileName, // 请求文件名
 	}
 	// 校验文件后缀
 	fileFormat, err := imaging.FormatFromFilename(resizeConfig.FileName)
 	if err != nil {
 		log.Printf("file format unsupport error: %s", err.Error())
-		return resizeConfig, err
+		return resizeConfig, true, err
 	}
 	resizeConfig.FileFormat = fileFormat
-	size := pathList[0]
 	// 解析长宽
 	sizeGroup := strings.Split(size, "x")
 	if len(sizeGroup) != 2 {
 		log.Println("image size group query error ", size)
-		return resizeConfig, sizeGroupErr
+		return resizeConfig, true, sizeGroupErr
 	}
 	width := sizeGroup[0]
 	height := sizeGroup[1]
@@ -112,15 +122,15 @@ func parsePath(pathList []string) (model.ResizeConfig, error) {
 	widthInt, err := strconv.Atoi(width)
 	if err != nil {
 		log.Println("image size width parse int error")
-		return resizeConfig, sizeParseIntErr
+		return resizeConfig, true, sizeParseIntErr
 	}
 	resizeConfig.Width = widthInt
 	// 解析宽度
 	heightInt, err := strconv.Atoi(height)
 	if err != nil {
 		log.Println("image size height parse int error")
-		return resizeConfig, sizeParseIntErr
+		return resizeConfig, true, sizeParseIntErr
 	}
 	resizeConfig.Height = heightInt
-	return resizeConfig, nil
+	return resizeConfig, false, nil
 }

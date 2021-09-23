@@ -3,7 +3,6 @@ package handle
 import (
 	"bytes"
 	"io/ioutil"
-	"strings"
 	"testing"
 
 	"github.com/disintegration/imaging"
@@ -31,8 +30,7 @@ func TestResizeImage(t *testing.T) {
 
 func TestImageResizeHandle(t *testing.T) {
 	basePath := "130x130/branches.png"
-	paths := strings.Split(basePath, "/")
-	conf, err := parsePath(paths)
+	conf, _, err := parsePath(basePath)
 	if err != nil {
 		t.Log("parse path error")
 		t.Error(err)
@@ -45,7 +43,7 @@ func TestImageResizeHandle(t *testing.T) {
 		return
 	}
 	conf.ImageByte = sourceBytes
-	resizedImageByte, err := util.GetResizedImage(&conf)
+	resizedImageByte, err := util.GetResizedImage(conf)
 	if err != nil {
 		t.Log("resize image error")
 		t.Error(err)

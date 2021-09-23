@@ -11,3 +11,18 @@
 ## 基本编译
 
 将工程编译二进制文件，并进行zip文件打包，上传到AWS的触发器代码源处
+
+### 参考
+
+ [aws api gateway 官方](https://aws.amazon.com/cn/blogs/compute/resize-images-on-the-fly-with-amazon-s3-aws-lambda-and-amazon-api-gateway/)
+
+ [aws-s3-lambda-api-gateway-at-golang](https://medium.com/@ducmeit/build-a-resize-images-tool-with-aws-s3-lambda-api-gateway-at-golang-7569c72c3e8a)
+
+ 落地:
+
+ [gw-resize-image-tool](https://github.com/ducmeit1/golang-resize-image-tool)
+
+ 开发难点:
+
+ [gif resize issue](https://github.com/disintegration/imaging/issues/23)
+ [Cloud Front cahce issue](https://github.com/sagidM/s3-resizer/issues/5)
