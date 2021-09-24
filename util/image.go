@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"image"
+	"image/color"
 	"image/draw"
 	"image/gif"
+	"image/jpeg"
 	"log"
 	"os"
 
@@ -82,4 +84,23 @@ func ReserveGif(gifByte []byte, filename string) error {
 		return err
 	}
 	return nil
+}
+
+func CompressImageResource(data []byte, quality int) []byte {
+	imgSrc, err := imaging.Decode(bytes.NewReader(data))
+	if err != nil {
+		return data
+	}
+	newImg := image.NewRGBA(imgSrc.Bounds())
+	draw.Draw(newImg, newImg.Bounds(), &image.Uniform{C: color.White}, image.Point{}, draw.Src)
+	draw.Draw(newImg, newImg.Bounds(), imgSrc, imgSrc.Bounds().Min, draw.Over)
+	buf := bytes.Buffer{}
+	err = jpeg.Encode(&buf, newImg, &jpeg.Options{Quality: quality})
+	if err != nil {
+		return data
+	}
+	if buf.Len() > len(data) {
+		return data
+	}
+	return buf.Bytes()
 }

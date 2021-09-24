@@ -2,6 +2,7 @@ package handle
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"image/draw"
 	"image/gif"
@@ -53,6 +54,41 @@ func TestResizeGif(t *testing.T) {
 	//}
 	//resizeGifByte, err := util.GetResizeGif(conf)
 	//t.Log("resizeGifByte len: ", len(resizeGifByte))
+}
+
+func TestCompressJpg(t *testing.T) {
+	fileBt, err := ioutil.ReadFile("lake.jpg")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	imageObj, err := imaging.Decode(bytes.NewReader(fileBt))
+	i := 90
+	for i > 0 {
+		name := fmt.Sprintf("compress_%d_lake.jpg", i)
+		err = imaging.Save(imageObj, name, imaging.JPEGQuality(i))
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		i = i - 10
+	}
+}
+
+func TestCompressPng(t *testing.T) {
+	fileBt, err := ioutil.ReadFile("pub.png")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	// PNG 先转换 JPG 格式, 再进行压缩处理
+	compressByte := util.CompressImageResource(fileBt, 40)
+	compressObj, err := imaging.Decode(bytes.NewReader(compressByte))
+	err = imaging.Save(compressObj, "compress_40_png_to_jpg.jpg")
+	if err != nil {
+		t.Error(err)
+		return
+	}
 }
 
 func TestResizeImage(t *testing.T) {
