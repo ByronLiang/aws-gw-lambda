@@ -142,3 +142,19 @@ func TestImageResizeHandle(t *testing.T) {
 	url := config.ResizeImageLambdaConfig.BucketUrl + "/" + fileFullPath
 	t.Log("resource url: ", url)
 }
+
+func TestImageExifRemove(t *testing.T) {
+	fileBt, err := ioutil.ReadFile("cloud.JPG")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	_, imageType, err := image.Decode(bytes.NewReader(fileBt))
+	_, err = util.GetImageExif(fileBt)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	fileKbSize := len(fileBt) / 1024
+	t.Log(imageType, fileKbSize)
+}

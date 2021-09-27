@@ -11,6 +11,8 @@ import (
 	"log"
 	"os"
 
+	exifremove "github.com/scottleedavis/go-exif-remove"
+
 	"github.com/ByronLiang/aws-gw-lambda/model"
 	"github.com/disintegration/imaging"
 )
@@ -103,4 +105,11 @@ func CompressImageResource(data []byte, quality int) []byte {
 		return data
 	}
 	return buf.Bytes()
+}
+
+func GetImageExif(data []byte) ([]byte, error) {
+	return exifremove.Remove(data)
+	//png := pngstructure.NewPngMediaParser()
+	//jmp := jpegstructure.NewJpegMediaParser()
+	// return nil, nil
 }
