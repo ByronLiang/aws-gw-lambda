@@ -4,8 +4,13 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"image"
+	"log"
+	"net/url"
 	"sync"
 	"time"
+
+	exifremove "github.com/scottleedavis/go-exif-remove"
 
 	"github.com/ByronLiang/aws-gw-lambda/config"
 
@@ -14,6 +19,8 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 )
+
+const BackupBucketPrefix = "backup-"
 
 var awsSession *session.Session
 var awsSessionOnce sync.Once
@@ -52,6 +59,21 @@ func DownloadFromS3WithBytes(bucket string, fullFileName string) (fileBytes []by
 	return
 }
 
+func DownloadBatchFromS3WithBytes(sess *session.Session, bucket string, fullFileName string) (fileBytes []byte, err error) {
+	downloader := s3manager.NewDownloader(sess)
+	buf := aws.NewWriteAtBuffer([]byte{})
+	_, err = downloader.Download(buf, &s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(fullFileName),
+	})
+	if err != nil {
+		err = errors.New(fmt.Sprintf("download file from s3 error, bucket: %s, key: %s, region: %s, error: %s", bucket, fullFileName, getRegion(sess), err.Error()))
+		return
+	}
+	fileBytes = buf.Bytes()
+	return
+}
+
 func Upload2S3ByBytes(bucket string, fullFileName string, contentType string, fileBytes []byte) (err error) {
 	sess, err := GetAwsSession()
 	if err != nil {
@@ -64,6 +86,19 @@ func Upload2S3ByBytes(bucket string, fullFileName string, contentType string, fi
 		Key:         aws.String(fullFileName),
 		Body:        bytes.NewReader(fileBytes),
 		ContentType: aws.String(contentType),
+	})
+	if err != nil {
+		err = errors.New(fmt.Sprintf("upload file 2 s3 error, bucket: %s, key: %s, region: %s, error: %s", bucket, fullFileName, getRegion(sess), err.Error()))
+	}
+	return
+}
+
+func UploadBatch2S3ByBytes(sess *session.Session, bucket string, fullFileName string, fileBytes []byte) (err error) {
+	uploader := s3manager.NewUploader(sess)
+	_, err = uploader.Upload(&s3manager.UploadInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(fullFileName),
+		Body:   bytes.NewReader(fileBytes),
 	})
 	if err != nil {
 		err = errors.New(fmt.Sprintf("upload file 2 s3 error, bucket: %s, key: %s, region: %s, error: %s", bucket, fullFileName, getRegion(sess), err.Error()))
@@ -94,4 +129,143 @@ func getRegion(sess *session.Session) string {
 		region = *sess.Config.Region
 	}
 	return region
+}
+
+// 列出bucket
+func ListBuck(s3Obj *s3.S3) (map[string]struct{}, error) {
+	output, err := s3Obj.ListBuckets(&s3.ListBucketsInput{})
+	if err != nil {
+		return nil, err
+	}
+	nameSet := make(map[string]struct{})
+	for _, buck := range output.Buckets {
+		nameSet[*buck.Name] = struct{}{}
+	}
+	return nameSet, nil
+}
+
+// 创建备份bucket
+func CreateBackupBucket(s3Obj *s3.S3, bucket string) error {
+	backupBuckName := GetBackupBucketName(bucket)
+	_, err := s3Obj.CreateBucket(&s3.CreateBucketInput{
+		Bucket: aws.String(backupBuckName),
+	})
+
+	if err != nil {
+		return err
+	}
+
+	err = s3Obj.WaitUntilBucketExists(&s3.HeadBucketInput{
+		Bucket: aws.String(backupBuckName),
+	})
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func CopyObjectToBackupBucket(s3Obj *s3.S3, targetBucket, fromBucket, item string) error {
+	source := fmt.Sprintf("%s/%s", fromBucket, item)
+	// Copy the item
+	_, err := s3Obj.CopyObject(&s3.CopyObjectInput{
+		Bucket:     aws.String(targetBucket),
+		CopySource: aws.String(url.PathEscape(source)),
+		Key:        aws.String(item),
+	})
+
+	if err != nil {
+		return err
+	}
+
+	err = s3Obj.WaitUntilObjectExists(&s3.HeadObjectInput{
+		Bucket: aws.String(targetBucket),
+		Key:    aws.String(item),
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func RefreshObject(sess *session.Session, bucket string) ([]string, error) {
+	backupBuckName := GetBackupBucketName(bucket)
+	param := &s3.ListObjectsInput{
+		Bucket: aws.String(bucket),
+	}
+	keyList := make([]string, 0)
+	s3Obj := s3.New(sess)
+	err := s3Obj.ListObjectsPages(param, func(output *s3.ListObjectsOutput, b bool) bool {
+		for _, content := range output.Contents {
+			objectName := *content.Key
+			fileFormat := FormatFromFilename(objectName)
+			// 识别类型
+			if fileFormat == JPEG || fileFormat == PNG {
+				// 拉取源文件数据
+				fileByte, err := DownloadBatchFromS3WithBytes(sess, bucket, objectName)
+				if err != nil {
+					log.Println("download file from s3 error", objectName)
+					continue
+				}
+				// 对文件进行压缩等相关处理
+				noExifImageBytes, err := exifremove.Remove(fileByte)
+				if err != nil {
+					log.Println("remove exif image error", objectName)
+					continue
+				}
+				imageBuffer := bytes.NewBuffer(noExifImageBytes)
+				img, _, err := image.Decode(imageBuffer)
+				if err != nil {
+					continue
+				}
+				compressImageByte, err := GetImageCompressByte(img, fileFormat, 50)
+				if err != nil {
+					log.Println("image compress error", objectName)
+					continue
+				}
+				// 备份成功
+				// copy object 到 备份 bucket
+				err = CopyObjectToBackupBucket(s3Obj, backupBuckName, bucket, objectName)
+				if err != nil {
+					log.Println("CopyObjectToBackupBucket error", objectName)
+					continue
+				}
+				// 将处理后的文件进行原路上传
+				err = UploadBatch2S3ByBytes(sess, bucket, objectName, compressImageByte)
+				if err != nil {
+					log.Println("UploadBatch2S3ByBytes error", objectName)
+					continue
+				}
+				keyList = append(keyList, fmt.Sprintf("key: %s", objectName))
+			}
+		}
+		return b
+	})
+	return keyList, err
+}
+
+func GetBackupBucketName(bucket string) string {
+	return fmt.Sprintf("%s%s", BackupBucketPrefix, bucket)
+}
+func LoadBuck(bucket string) ([]string, int) {
+	sess, err := GetAwsSession()
+	if err != nil {
+		err = errors.New("get signed url, create aws session error: " + err.Error())
+		return nil, 0
+	}
+	param := &s3.ListObjectsInput{
+		Bucket: aws.String(bucket),
+	}
+	pageNum := 0
+	keyList := make([]string, 0)
+	s3.New(sess).ListObjectsPages(param, func(output *s3.ListObjectsOutput, b bool) bool {
+		for _, content := range output.Contents {
+			keyList = append(keyList, fmt.Sprintf("key: %s", *content.Key))
+		}
+		pageNum++
+		return b
+	})
+	return keyList, pageNum
 }

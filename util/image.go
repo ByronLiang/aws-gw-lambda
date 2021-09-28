@@ -10,12 +10,35 @@ import (
 	"image/jpeg"
 	"log"
 	"os"
+	"path/filepath"
+	"strings"
 
 	exifremove "github.com/scottleedavis/go-exif-remove"
 
 	"github.com/ByronLiang/aws-gw-lambda/model"
 	"github.com/disintegration/imaging"
 )
+
+type Format int
+
+// Image file formats.
+const (
+	JPEG Format = iota
+	PNG
+	GIF
+	TIFF
+	BMP
+)
+
+var formatExts = map[string]Format{
+	"jpg":  JPEG,
+	"jpeg": JPEG,
+	"png":  PNG,
+	"gif":  GIF,
+	"tif":  TIFF,
+	"tiff": TIFF,
+	"bmp":  BMP,
+}
 
 func GetResizedImage(resizeConfig *model.ResizeConfig) ([]byte, error) {
 	imageObj, err := imaging.Decode(bytes.NewReader(resizeConfig.ImageByte))
@@ -112,4 +135,36 @@ func GetImageExif(data []byte) ([]byte, error) {
 	//png := pngstructure.NewPngMediaParser()
 	//jmp := jpegstructure.NewJpegMediaParser()
 	// return nil, nil
+}
+
+func FormatFromFilename(filename string) Format {
+	ext := filepath.Ext(filename)
+	if f, ok := formatExts[strings.ToLower(strings.TrimPrefix(ext, "."))]; ok {
+		return f
+	}
+	return -1
+}
+
+// 压缩图片并返回图片字节数据
+func GetImageCompressByte(img image.Image, format Format, quality int) ([]byte, error) {
+	var err error
+	buf := new(bytes.Buffer)
+	switch format {
+	case JPEG:
+		err = jpeg.Encode(buf, img, &jpeg.Options{Quality: quality})
+		if err != nil {
+			return nil, err
+		}
+		return buf.Bytes(), nil
+	case PNG:
+		newImg := image.NewRGBA(img.Bounds())
+		draw.Draw(newImg, newImg.Bounds(), &image.Uniform{C: color.White}, image.Point{}, draw.Src)
+		draw.Draw(newImg, newImg.Bounds(), img, img.Bounds().Min, draw.Over)
+		err = jpeg.Encode(buf, newImg, &jpeg.Options{Quality: quality})
+		if err != nil {
+			return nil, err
+		}
+		return buf.Bytes(), nil
+	}
+	return nil, nil
 }
