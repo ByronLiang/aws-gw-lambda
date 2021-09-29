@@ -190,16 +190,25 @@ func CopyObjectToBackupBucket(s3Obj *s3.S3, targetBucket, fromBucket, item strin
 	return nil
 }
 
-func RefreshObject(sess *session.Session, bucket string) ([]string, error) {
+func RefreshObject(sess *session.Session, bucket, path string) {
 	backupBuckName := GetBackupBucketName(bucket)
 	param := &s3.ListObjectsInput{
 		Bucket: aws.String(bucket),
 	}
-	keyList := make([]string, 0)
+	if path != "" {
+		param.Prefix = aws.String(path)
+	}
 	s3Obj := s3.New(sess)
-	err := s3Obj.ListObjectsPages(param, func(output *s3.ListObjectsOutput, b bool) bool {
+	// 获取 备份Bucket 的存量文件
+	backupBucketObjectSet := GetAllObjectList(s3Obj, backupBuckName, path)
+	s3Obj.ListObjectsPages(param, func(output *s3.ListObjectsOutput, b bool) bool {
 		for _, content := range output.Contents {
 			objectName := *content.Key
+			// 备份已有文件, 不进行压缩处理
+			if _, ok := backupBucketObjectSet[objectName]; ok {
+				log.Printf("object exist in backup bucket bucket: %s filename: %s", bucket, objectName)
+				continue
+			}
 			fileFormat := FormatFromFilename(objectName)
 			// 识别类型
 			if fileFormat == JPEG || fileFormat == PNG {
@@ -218,54 +227,51 @@ func RefreshObject(sess *session.Session, bucket string) ([]string, error) {
 				imageBuffer := bytes.NewBuffer(noExifImageBytes)
 				img, _, err := image.Decode(imageBuffer)
 				if err != nil {
+					log.Printf("image decode error: bucket: %s filename: %s", bucket, objectName)
 					continue
 				}
 				compressImageByte, err := GetImageCompressByte(img, fileFormat, 50)
 				if err != nil {
-					log.Println("image compress error", objectName)
+					log.Printf("image compress error: bucket: %s filename: %s", bucket, objectName)
 					continue
 				}
 				// 备份成功
 				// copy object 到 备份 bucket
 				err = CopyObjectToBackupBucket(s3Obj, backupBuckName, bucket, objectName)
 				if err != nil {
-					log.Println("CopyObjectToBackupBucket error", objectName)
+					log.Printf("image CopyObjectToBackupBucket error: bucket: %s filename: %s", bucket, objectName)
 					continue
 				}
 				// 将处理后的文件进行原路上传
 				err = UploadBatch2S3ByBytes(sess, bucket, objectName, compressImageByte)
 				if err != nil {
-					log.Println("UploadBatch2S3ByBytes error", objectName)
+					log.Printf("image UploadBatch2S3ByBytes error: bucket: %s filename: %s", bucket, objectName)
 					continue
 				}
-				keyList = append(keyList, fmt.Sprintf("key: %s", objectName))
 			}
 		}
 		return b
 	})
-	return keyList, err
 }
 
 func GetBackupBucketName(bucket string) string {
 	return fmt.Sprintf("%s%s", BackupBucketPrefix, bucket)
 }
-func LoadBuck(bucket string) ([]string, int) {
-	sess, err := GetAwsSession()
-	if err != nil {
-		err = errors.New("get signed url, create aws session error: " + err.Error())
-		return nil, 0
-	}
+
+func GetAllObjectList(s3Obj *s3.S3, bucket, path string) map[string]struct{} {
 	param := &s3.ListObjectsInput{
 		Bucket: aws.String(bucket),
 	}
-	pageNum := 0
-	keyList := make([]string, 0)
-	s3.New(sess).ListObjectsPages(param, func(output *s3.ListObjectsOutput, b bool) bool {
+	// 指定目录
+	if path != "" {
+		param.Prefix = aws.String(path)
+	}
+	objectSet := make(map[string]struct{})
+	s3Obj.ListObjectsPages(param, func(output *s3.ListObjectsOutput, b bool) bool {
 		for _, content := range output.Contents {
-			keyList = append(keyList, fmt.Sprintf("key: %s", *content.Key))
+			objectSet[*content.Key] = struct{}{}
 		}
-		pageNum++
 		return b
 	})
-	return keyList, pageNum
+	return objectSet
 }

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"strings"
 
@@ -24,21 +23,20 @@ func main() {
 	// 批量重压缩并上传
 	for name := range nameSet {
 		if !strings.HasPrefix(name, util.BackupBucketPrefix) {
-			err = util.CreateBackupBucket(s3Obj, name)
-			if err != nil {
-				log.Println("create backup bucket error", err.Error())
-				continue
+			if _, ok := nameSet[util.GetBackupBucketName(name)]; !ok {
+				// 没有备份库
+				err = util.CreateBackupBucket(s3Obj, name)
+				if err != nil {
+					log.Println("create backup bucket error", err.Error())
+					continue
+				}
 			}
-			objectList, err := util.RefreshObject(sess, name)
-			if err != nil {
-				log.Println("refresh error")
-				continue
-			}
-			fmt.Println(objectList)
+			util.RefreshObject(sess, name, "")
 		}
 	}
-	//objectList, num := util.LoadBuck()
+	//objectList := util.GetAllObjectList(s3Obj,
+	//	"byronegg",
+	//	"")
 	//fmt.Println(objectList)
 	//fmt.Println(len(objectList))
-	//fmt.Println(num)
 }
