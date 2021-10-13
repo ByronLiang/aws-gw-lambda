@@ -87,9 +87,10 @@ exports.handler = async (event, context, callback) => {
             imageObj = await sharp(s3Object.Body).rotate();
             metaData = await imageObj.metadata();
             // 解析裁剪参数, 进行裁剪处理
+            // fit: outside 保持纵横比裁剪
             if (metaData.width > width || metaData.height > height) {
                 console.log("start resize image");
-                imageObj.resize(width, height);
+                imageObj.resize(width, height, { fit:'outside' });
             }
             buffer = await imageObj.toBuffer();
             console.log("start to upload")

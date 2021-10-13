@@ -2,7 +2,7 @@
     "name": "resizer",
     "version": "1.0.0",
     "dependencies": {
-        "sharp": "^0.23.3"
+        "sharp": "^0.25.2"
     },
     "devDependencies": {
         "aws-sdk": "^2.36.0"

@@ -3,6 +3,7 @@
 ## 图片处理库
 1. sharp 库
 2. npm install 比较复杂，涉及环境安装libvips 二进制包
+3. 常见错误: `prebuild-install WARN install No prebuilt binaries found` Node14 需要安装 sharp 版本0.25.2 以上
 
 ## aws 配置
 1. 设置lambda 函数, 触发器选择 cloudfront，相关权限配置: edge 执行权限，上传s3权限
