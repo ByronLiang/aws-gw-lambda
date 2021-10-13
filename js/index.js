@@ -5,9 +5,12 @@ const sharp = require('sharp');
 
 const region = "us-east-1";
 const bucket = "byronbook";
+// 支持裁剪的文件类型
 const supportImageTypes = ['jpg', 'jpeg', 'png'];
-const allowedDimension = [ {w:100,h:100}, {w:200,h:200}, {w:300,h:300}, {w:400,h:400} ];
-const resizeType = "cover";
+// 指定可裁剪的尺寸值
+// const allowedDimension = [ {w:100,h:100}, {w:200,h:200}, {w:300,h:300}, {w:400,h:400} ];
+// 测试不限制
+const allowedDimension = [];
 
 const s3 = new aws.S3({
   region: region,
@@ -22,15 +25,18 @@ exports.handler = async (event, context, callback) => {
     const request = event.Records[0].cf.request;
     if (response.status == 404 || response.status == 403) {
         let key = decodeURIComponent(request.uri).substring(1);
-        console.log("key", key)
-        console.log("response \n", JSON.stringify(response))
+        // console.log("key", key)
+        // console.log("response \n", JSON.stringify(response))
+        // 参数示例: "images/ims-web/08bf254d-f8b4-4711-88cf-37390f00dd27.jpg_200x200.jpg"
         // 解析参数
-        let mathcGroup = key.match(/(.*)_(\d+)x(\d+)(.*)\.(.*)/);
+        let mathcGroup = key.match(/(.*)_(\d+)x(\d+)\.(.*)/);
+        // 不符合正则规则, 不处理
         if (mathcGroup === null) {
             callback(null, response);
             return;
         }
-        if (mathcGroup.length !== 6) {
+        // 解析异常, 不处理
+        if (mathcGroup.length !== 5) {
             callback(null, response);
             return;
         }
@@ -39,21 +45,30 @@ exports.handler = async (event, context, callback) => {
         let originFileKey = mathcGroup[1];
         let width = parseInt(mathcGroup[2], 10);
         let height = parseInt(mathcGroup[3], 10);
-        let filename = mathcGroup[4];
         // 文件类型
-        let format = mathcGroup[5].toLowerCase();
+        let format = mathcGroup[4].toLowerCase();
         // 校验文件类型是否符号自定义裁剪
         let isSupportImageFormat = supportImageTypes.some(type => {
             return type == format;
         });
         if (isSupportImageFormat) {
-            // 校验尺寸
-            for (let dimension of allowedDimension) {
-                if (dimension.w === width && dimension.h === height) {
-                    canResizeImage = true;
-                    break
+            // 没配置指定尺寸, 默认都进行裁剪处理
+            if (allowedDimension.length === 0) {
+                canResizeImage = true;
+            } else {
+                // 校验尺寸
+                for (let dimension of allowedDimension) {
+                    if (dimension.w === width && dimension.h === height) {
+                        canResizeImage = true;
+                        break
+                    }
                 }
             }
+        }
+        // 不符合裁剪校验, 返回响应
+        if (!canResizeImage) {
+            callback(null, response);
+            return;
         }
         try {
             // get the source image file
@@ -63,37 +78,32 @@ exports.handler = async (event, context, callback) => {
                     Key: originFileKey
                 })
                 .promise();
+            // 获取图片内容异常
             if (s3Object.ContentLength == 0) {
                 callback(null, response);
                 return;
             }
             let imageObj, metaData, buffer
-            // imageObj = await sharp(s3Object.Body).rotate();
-            if (canResizeImage) {
-                imageObj = await sharp(s3Object.Body).rotate();
-                metaData = await imageObj.metadata();
-                // 解析裁剪参数, 进行裁剪处理
-                if (metaData.width > width || metaData.height > height) {
-                    console.log("start resize image");
-                    imageObj.resize(width, height);
-                }
-                buffer = await imageObj.toBuffer();
-                let byteLength = Buffer.byteLength(buffer, "base64");
-                console.log("buffer length: ", byteLength)
-                console.log("start to upload")
-                // upload to s3
-                const s3PutObjectRes = await s3.putObject({
-                    Body: buffer,
-                    Bucket: bucket,
-                    ContentType: 'image/' + format,
-                    Key: newFileKey,
-                }).promise()
-                console.log("end upload to s3")
-            } else {
-                console.log("no resize image")
-                buffer = s3Object.Body
-                // buffer = await imageObj.toBuffer();
+            imageObj = await sharp(s3Object.Body).rotate();
+            metaData = await imageObj.metadata();
+            // 解析裁剪参数, 进行裁剪处理
+            if (metaData.width > width || metaData.height > height) {
+                console.log("start resize image");
+                imageObj.resize(width, height);
             }
+            buffer = await imageObj.toBuffer();
+            console.log("start to upload")
+            // 异步上传到s3
+            s3.putObject({
+                Body: buffer,
+                Bucket: bucket,
+                ContentType: 'image/' + format,
+                Key: newFileKey,
+            }).promise().catch((err) => { 
+                console.log("Exception while writing resized image to bucket", newFileKey);
+                console.error(err);
+            });
+            console.log("end upload to s3");
             response.status = 200;
             response.body = buffer.toString('base64');
             response.bodyEncoding = 'base64';
@@ -106,23 +116,7 @@ exports.handler = async (event, context, callback) => {
             callback(null, response);
             return;
         }
-    }    
+    }
     //Return modified response
     callback(null, response);
-    
-    function responseUpdate(
-        status,
-        statusDescription,
-        body,
-        contentHeader,
-        bodyEncoding = undefined
-    ) {
-        response.status = status;
-        response.statusDescription = statusDescription;
-        response.body = body;
-        response.headers["content-type"] = contentHeader;
-        if (bodyEncoding) {
-          response.bodyEncoding = bodyEncoding;
-        }
-    }
 };
