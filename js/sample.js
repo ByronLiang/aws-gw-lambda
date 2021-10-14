@@ -7,7 +7,7 @@ let test = async () => {
     .resize({
         width: 400,
         height: 300,
-        fit: 'outside',
+        fit: 'inside',
     })
     .sharpen()
     .toFile('output.jpg')
