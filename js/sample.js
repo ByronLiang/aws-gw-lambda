@@ -2,7 +2,7 @@
 
 const sharp = require('sharp');
 
-let test = async () => {
+let crop = async () => {
     await sharp('sample.jpg')
     .resize({
         width: 400,
@@ -19,5 +19,22 @@ let test = async () => {
     });
 };
 
-test();
+let compress = async () => {
+    await sharp('sample.jpg').jpeg({
+        quality: 40,
+    })
+    .toFile('compress_output.jpg')
+    .then(info => { 
+        console.log(info);
+    })
+    .catch(err => {
+        console.log(err);
+    });
+}
+
+// 裁剪demo
+crop();
+
+// 压缩demo
+compress();
 
