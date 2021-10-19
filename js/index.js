@@ -2,6 +2,7 @@
 
 const aws = require('aws-sdk');
 const sharp = require('sharp');
+const querystring = require('querystring');
 
 const region = "us-east-1";
 const bucket = "byronbook";
@@ -25,46 +26,14 @@ exports.handler = async (event, context, callback) => {
     const request = event.Records[0].cf.request;
     if (response.status == 404 || response.status == 403) {
         let key = decodeURIComponent(request.uri).substring(1);
-        // console.log("key", key)
-        // console.log("response \n", JSON.stringify(response))
-        // 参数示例: "images/ims-web/08bf254d-f8b4-4711-88cf-37390f00dd27.jpg_200x200.jpg"
         // 解析参数
-        let mathcGroup = key.match(/(.*)_(\d+)x(\d+)\.(.*)/);
-        // 不符合正则规则, 不处理
-        if (mathcGroup === null) {
-            callback(null, response);
-            return;
-        }
-        // 解析异常, 不处理
-        if (mathcGroup.length !== 5) {
-            callback(null, response);
-            return;
-        }
-        let newFileKey = mathcGroup[0];
-        // 原文件key
-        let originFileKey = mathcGroup[1];
-        let width = parseInt(mathcGroup[2], 10);
-        let height = parseInt(mathcGroup[3], 10);
-        // 文件类型
-        let format = mathcGroup[4].toLowerCase();
-        // 校验文件类型是否符号自定义裁剪
-        let isSupportImageFormat = supportImageTypes.some(type => {
-            return type == format;
-        });
-        if (isSupportImageFormat) {
-            // 没配置指定尺寸, 默认都进行裁剪处理
-            if (allowedDimension.length === 0) {
-                canResizeImage = true;
-            } else {
-                // 校验尺寸
-                for (let dimension of allowedDimension) {
-                    if (dimension.w === width && dimension.h === height) {
-                        canResizeImage = true;
-                        break
-                    }
-                }
-            }
-        }
+        let res = parseQuery(key);
+        let newFileKey = key;
+        let originFileKey = res.originFileKey;
+        let width = res.width;
+        let height = res.height;
+        let format = res.format;
+        canResizeImage = res.canResizeImage;
         // 不符合裁剪校验, 返回响应
         if (!canResizeImage) {
             callback(null, response);
@@ -89,8 +58,7 @@ exports.handler = async (event, context, callback) => {
             // 解析裁剪参数, 进行裁剪处理
             // fit: inside 保持纵横比裁剪
             if (metaData.width > width || metaData.height > height) {
-                console.log("start resize image");
-                imageObj.resize(width, height, { fit:'inside' });
+                imageObj.resize(width, height, { fit: 'inside' });
             }
             buffer = await imageObj.toBuffer();
             console.log("start to upload")
@@ -104,7 +72,6 @@ exports.handler = async (event, context, callback) => {
                 console.log("Exception while writing resized image to bucket", newFileKey);
                 console.error(err);
             });
-            console.log("end upload to s3");
             response.status = 200;
             response.body = buffer.toString('base64');
             response.bodyEncoding = 'base64';
@@ -120,4 +87,71 @@ exports.handler = async (event, context, callback) => {
     }
     //Return modified response
     callback(null, response);
+
+    function parsePath(key) {
+        // 参数示例: "images/ims-web/08bf254d-f8b4-4711-88cf-37390f00dd27.jpg_200x200.jpg"
+        // 解析参数
+        let mathcGroup = key.match(/(.*)_(\d+)x(\d+)\.(.*)/);
+        // 不符合正则规则, 不处理
+        if (mathcGroup === null) {
+            return {canResizeImage: false, originFileKey: "", width: 0, height: 0, format: ""};
+        }
+        // 解析异常, 不处理
+        if (mathcGroup.length !== 5) {
+            return {canResizeImage: false, originFileKey: "", width: 0, height: 0, format: ""};
+        }
+        // 原文件key
+        let originFileKey = mathcGroup[1];
+        let width = parseInt(mathcGroup[2], 10);
+        let height = parseInt(mathcGroup[3], 10);
+        // 文件类型
+        let format = mathcGroup[4].toLowerCase();
+        // 校验文件类型是否符号自定义裁剪
+        let isSupportImageFormat = supportImageTypes.some(type => {
+            return type == format;
+        });
+        if (isSupportImageFormat) {
+            return {canResizeImage: true, originFileKey: originFileKey, width: width, height: height, format: format};
+        } else {
+            return {canResizeImage: false, originFileKey: "", width: 0, height: 0, format: ""};
+        }
+    }
+
+    function parseQuery(key) {
+        // 参数示例: "images/ims-web/08bf254d-f8b4-4711-88cf-37390f00dd27.jpg?size=200x200"
+        // 解析参数
+        let mathcGroup = key.match(/(.*\.(.*))\?(.*)/);
+        // 不符合正则规则, 不处理
+        if (mathcGroup === null) {
+            return {canResizeImage: false, originFileKey: "", width: 0, height: 0, format: ""};
+        }
+        // 解析异常, 不处理
+        if (mathcGroup.length !== 4) {
+            return {canResizeImage: false, originFileKey: "", width: 0, height: 0, format: ""};
+        }
+        // 原文件key
+        let originFileKey = mathcGroup[1];
+        // 文件类型
+        let format = mathcGroup[2].toLowerCase();
+        // 参数请求
+        let query = mathcGroup[3];
+        let params = querystring.parse(query);
+        if (!params.size) {
+            return {canResizeImage: false, originFileKey: "", width: 0, height: 0, format: ""};
+        }
+        let sizeGroup = params.size.split("x");
+        if (sizeGroup.length !== 2) {
+            return {canResizeImage: false, originFileKey: "", width: 0, height: 0, format: ""};
+        }
+        let width = parseInt(sizeGroup[0], 10);
+        let height = parseInt(sizeGroup[1], 10);
+        // 校验文件类型是否符号自定义裁剪
+        let isSupportImageFormat = supportImageTypes.some(type => {
+            return type == format;
+        });
+        if (isSupportImageFormat) {
+            return {canResizeImage: true, originFileKey: originFileKey, width: width, height: height, format: format};
+        }
+        return {canResizeImage: false, originFileKey: "", width: 0, height: 0, format: ""};
+    }
 };
