@@ -10,8 +10,6 @@ const bucket = "byronbook";
 const supportImageTypes = ['jpg', 'jpeg', 'png'];
 // 指定可裁剪的尺寸值
 // const allowedDimension = [ {w:100,h:100}, {w:200,h:200}, {w:300,h:300}, {w:400,h:400} ];
-// 测试不限制
-const allowedDimension = [];
 
 const s3 = new aws.S3({
   region: region,
@@ -27,7 +25,7 @@ exports.handler = async (event, context, callback) => {
     if (response.status == 404 || response.status == 403) {
         let key = decodeURIComponent(request.uri).substring(1);
         // 解析参数
-        let res = parseQuery(key);
+        let res = parsePath(key);
         let newFileKey = key;
         let originFileKey = res.originFileKey;
         let width = res.width;
@@ -61,7 +59,9 @@ exports.handler = async (event, context, callback) => {
                 imageObj.resize(width, height, { fit: 'inside' });
             }
             buffer = await imageObj.toBuffer();
-            console.log("start to upload")
+            // 自定义生成s3的文件名
+            newFileKey = originFileKey + "_" + width + "x" + height + "." + format;
+            console.log("start to upload", newFileKey);
             // 异步上传到s3
             s3.putObject({
                 Body: buffer,
