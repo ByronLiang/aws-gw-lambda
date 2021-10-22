@@ -20,6 +20,8 @@
 
 2. `const bucket = ` 配置bucket
 
+3. `const allowedDimension =` 配置可裁剪尺寸数组对象
+
 ### aws lambda 函数配置
 
 1. 设置lambda 函数, 触发器选择 cloudfront，相关权限配置: edge 执行权限，上传s3权限

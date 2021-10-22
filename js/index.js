@@ -9,7 +9,7 @@ const bucket = "byronbook";
 // 支持裁剪的文件类型
 const supportImageTypes = ['jpg', 'jpeg', 'png'];
 // 指定可裁剪的尺寸值
-// const allowedDimension = [ {w:100,h:100}, {w:200,h:200}, {w:300,h:300}, {w:400,h:400} ];
+const allowedDimension = [ {w:100,h:100}, {w:200,h:200}, {w:300,h:300}, {w:400,h:400} ];
 
 const s3 = new aws.S3({
   region: region,
@@ -37,6 +37,10 @@ exports.handler = async (event, context, callback) => {
             callback(null, response);
             return;
         }
+        // 识别尺寸: 就近原则，使用常用尺寸中最接近的尺寸
+        // let dimension = getClosestDimension(width);
+        // width = parseInt(dimension.w);
+        // height = parseInt(dimension.h);
         let filePath = genFileName(originFileKey, format, width, height);
         // 查看bucket 是否存在此文件
         let filePathRes = await getObjectFromS3(filePath);
@@ -171,5 +175,40 @@ exports.handler = async (event, context, callback) => {
         } catch (err) {
             return {objExist: false, data: ""};
         }
+    }
+
+    function getClosestDimension(width) {
+        let table = allowedDimension;
+        table.sort((a, b) => a.w - b.w);
+        let l = 0;
+        let r = table.length - 1;
+        let m = 0;
+        let match = false;
+        while (l <= r) {
+            m = l + parseInt((r - l) >> 1);
+            if (table[m].w == width) {
+                match = true;
+                l = m;
+                break
+            }
+            if (table[m].w > width) {
+                r = m - 1;
+            } else {
+                l = m + 1;
+            }
+        }
+        // 取最小尺寸值
+        if (l === 0) {
+            return table[l];
+        }
+        // 取最大尺寸值
+        if (l === table.length) {
+            return table[table.length - 1];
+        }
+        // 无法匹配, 向下取更小的尺寸值
+        if (!match) {
+            return table[l-1];
+        }
+        return table[l];
     }
 };

@@ -1,2 +1,2 @@
-rm index.zip
+# rm index.zip
 zip -r index.zip .
