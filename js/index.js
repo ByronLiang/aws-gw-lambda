@@ -9,7 +9,7 @@ const bucket = "byronbook";
 // 支持裁剪的文件类型
 const supportImageTypes = ['jpg', 'jpeg', 'png'];
 // 指定可裁剪的尺寸值
-const allowedDimension = [ {w:100,h:100}, {w:200,h:200}, {w:300,h:300}, {w:400,h:400} ];
+const allowedDimension = [ {w:120,h:120}, {w:300,h:300}, {w:600,h:600}, {w:1000,h:1000} ];
 
 const s3 = new aws.S3({
   region: region,
@@ -25,7 +25,7 @@ exports.handler = async (event, context, callback) => {
     if (response.status == 404 || response.status == 403) {
         let key = decodeURIComponent(request.uri).substring(1);
         // 解析参数
-        let res = parseQuery(key);
+        let res = parsePath(key);
         let newFileKey = key;
         let originFileKey = res.originFileKey;
         let width = res.width;
